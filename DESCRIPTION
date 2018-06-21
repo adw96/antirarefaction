@@ -1,0 +1,27 @@
+Package: antirarefaction
+Type: Package
+Title: What goes wrong when you rarefy?
+Version: 0.1.0
+Authors@R: c(person("Amy", "Willis", email = "adwillis@uw.ed", role = c("aut", "cre")))
+Description: A package to convince you not to rarefy
+License: GPL (>= 2)
+Depends: R (>= 3.2)
+Imports:
+    breakaway,
+    dplyr,
+    ggplot2,
+    grid,
+    gridExtra,
+    lattice,
+    magrittr,
+    shiny
+    stats,
+    doParallel,
+    utils,
+    phyloseq
+Suggests:
+    testthat
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 6.0.1
+VignetteBuilder: R.rsp
