@@ -24,6 +24,7 @@ test_that("get_error_rates", {
                          na2 = 7000, 
                          nb2 = 700) 
   
+  
   expect_is(ger, "data.frame")
 
   ## construct a setting where raw should be fine
