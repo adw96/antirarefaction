@@ -7,15 +7,18 @@ make_community <- function(CC, alpha_parameter, beta_parameter) {
   raw_abundances
 }
 
+#' @export
 sample_richness <- function(community) {
   community %>% unique %>% length
 }
 
+#' @export
 rarefied_richness <- function(my_sample, level) {
   my_sample %>% sample(size = level, replace = FALSE) -> rarefied_sample
   rarefied_sample %>% unique %>% length
 }
 
+#' @export
 estimate_richness_breakaway <- function(my_sample) {
   my_sample %>% table %>% make_frequency_count_table -> my_count_table
   result <- try(breakaway::breakaway(my_count_table, output=F, plot = F, answers = T), 
@@ -28,6 +31,7 @@ estimate_richness_breakaway <- function(my_sample) {
   }
 }
 
+#' @export
 draw_rarefaction <- function(population, pts = NA, replicates = 5, ecosystem = NA) {
   rarefaction_table <- data.frame()
   if (all(is.na(pts))) pts <- c(round(seq(from = 5, to = length(population$names)/100, length = 100)),
@@ -53,6 +57,7 @@ draw_rarefaction <- function(population, pts = NA, replicates = 5, ecosystem = N
   rarefaction_table
 }
 
+#' @export
 get_point <- function(ecosystem, read, label) {
   read <- round(read)
   my_population <- get(paste("population", ecosystem, sep=""))
@@ -83,6 +88,7 @@ get_point <- function(ecosystem, read, label) {
   rbind(point, rarefied_sample, estimate)
 }
 
+#' @export
 make_table <- function(Ca, Cb, aa, ab, ba, bb, na1, na2, nb1, nb2) {
   
   population1 <- make_community(Ca, alpha_parameter = aa, beta_parameter = ab)
@@ -124,6 +130,7 @@ make_table <- function(Ca, Cb, aa, ab, ba, bb, na1, na2, nb1, nb2) {
   rarefaction_table_unequal
 }
 
+#' @export
 make_plot <- function(rarefaction_table_unequal,
                       Ca, Cb, aa, ab, ba, bb, na1, na2, nb1, nb2) {
   ## TODO: define Ca, Cb, na1, na2...
@@ -185,6 +192,12 @@ make_plot <- function(rarefaction_table_unequal,
                layout_matrix = matrix(c(1,1,2,3,4), nrow = 1))
 }
 
+#' Get error rates for different approaches
+#' 
+#' Accepts a data structure and returns the estimated error rates for different approaches
+#' 
+#' @param repeats
+#' 
 #' @import breakaway
 #' @export
 get_error_rates <- function(repeats, 
@@ -192,6 +205,7 @@ get_error_rates <- function(repeats,
                             Ca, Cb, 
                             aa, ab, ba, bb, 
                             na1, na2, nb1, nb2) {
+  
   populationA <- make_community(Ca, alpha_parameter = aa, beta_parameter = ab)
   populationB <- make_community(Cb, alpha_parameter = ba, beta_parameter = bb)
   
@@ -201,6 +215,7 @@ get_error_rates <- function(repeats,
   pvalues <- matrix(NA, nrow = 3, ncol = repeats)
   correct <- matrix(TRUE, nrow = 3, ncol = repeats)
   
+  ## TODO: run in parallel
   for (i in 1:repeats) {
     
     # generate samples
@@ -210,8 +225,8 @@ get_error_rates <- function(repeats,
     samples <- list()
     for (k in 1:(2*rr)) {
       my_name <- get(paste("population", ifelse(k <= rr, "A", "B"), sep=""))
-      my_sample <- sample(1:length(my_name$proportions),
-                          size = read_counts[k], prob = my_name$proportions, replace = T)
+      my_sample <- sample(1:length(my_name),
+                          size = read_counts[k], prob = my_name, replace = T)
       samples[[k]] <- my_sample
     }
     
@@ -226,7 +241,9 @@ get_error_rates <- function(repeats,
     pvalues[1, i] <- cs_summary$coef[2,4]
     pvalues[2, i] <- cs_r_summary$coef[2,4]
     
-    bta <- betta(cc2[1, ], cc2[2, ], X = cbind("Intercept" = 1, "CovariateB" = c(rep(0, rr), rep(1, rr) )))
+    bta <- betta(cc2[1, ], cc2[2, ], 
+                 X = cbind("Intercept" = 1, 
+                           "CovariateB" = c(rep(0, rr), rep(1, rr) )))
     pvalues[3, i] <- bta$table[2,3]
     
     if (Ca != Cb) {
@@ -248,6 +265,7 @@ get_error_rates <- function(repeats,
   overall_correct <- threshold & correct
   error <- apply(overall_correct, 1, mean)
   names(error) <- c("Raw", "Rarefied", "Corrected")
+  
   t(error)
   
 }
