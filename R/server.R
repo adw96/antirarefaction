@@ -1,5 +1,11 @@
 #' Generate a microbial community 
 #' 
+#' Generate relative abundances of taxa from a beta distribution. Useful for illustrating and simulations.
+#' 
+#' @param CC Species richness of the community
+#' @param alpha_parameter the alpha parameter for the beta distribution
+#' @param beta_parameter the alpha parameter for the beta distribution
+#' 
 #' @export
 make_community <- function(CC, alpha_parameter, beta_parameter) {
   relative_proportions <- rbeta(CC, alpha_parameter, beta_parameter) 
@@ -7,21 +13,38 @@ make_community <- function(CC, alpha_parameter, beta_parameter) {
   raw_abundances
 }
 
+#' The observed richness of a sample
+#' 
+#' @param my_sample A vector of the species labels. 
+#' The vector should be of length n, where n is the number of indiviudals 
+#' in the sample. The i-th element is the species label of individual i. 
+#' If the relative abundance is given, a warning is thrown.   
+#' 
 #' @export
-sample_richness <- function(community) {
-  community %>% unique %>% length
+sample_richness <- function(my_sample) {
+  if (all(my_sample < 1)) warning("Possible misuse of sample_richness()")
+  my_sample %>% unique %>% length
 }
 
+#' Rarefy a sample to a given level
+#'
+#' @param my_sample See sample_richness for details.
+#' 
 #' @export
 rarefied_richness <- function(my_sample, level) {
   my_sample %>% sample(size = level, replace = FALSE) -> rarefied_sample
   rarefied_sample %>% unique %>% length
 }
 
+#' A wrapper for breakaway()
+#' 
 #' @export
 estimate_richness_breakaway <- function(my_sample) {
   my_sample %>% table %>% make_frequency_count_table -> my_count_table
-  result <- try(breakaway::breakaway(my_count_table, output=F, plot = F, answers = T), 
+  result <- try(breakaway::breakaway(my_count_table, 
+                                     output=F, 
+                                     plot = F, 
+                                     answers = T), 
                 silent = T)
   if (class(result) == "list")  {
     c(result$est, result$seest)
@@ -31,48 +54,107 @@ estimate_richness_breakaway <- function(my_sample) {
   }
 }
 
+#' Subsample species to draw a rarefaction curve
+#' 
+#' @param population The population to draw from
+#' @param pts A vector of depths to subsample to
+#' @param replicates The number of times to repeat (for confidence intervals)
+#' @param ecosystem The ecosystem name (useful for comparing ecosystems in plots)
+#' 
+#' @return A data frame with each row corresponding to a sampling depth (number of rows = length of pts)
+#' 
 #' @export
 draw_rarefaction <- function(population, pts = NA, replicates = 5, ecosystem = NA) {
   rarefaction_table <- data.frame()
-  if (all(is.na(pts))) pts <- c(round(seq(from = 5, to = length(population$names)/100, length = 100)),
-                                round(seq(from = length(population$names)/100, to = length(population$names)/10, length = 100)),
-                                round(seq(from = length(population$names)/10, to = length(population$names)/4, length = 100)),
-                                round(seq(from = length(population$names)/4, to = length(population$names), length = 10)))
-  who <- replicate(replicates, sample(population$names, length(population$names), replace = F))
+  
+  CC <- length(population)
+  pts %<>% round
+  pts %<>% unique
+  # print(pts)
+  # print(population)
+  if (all(is.na(pts))) pts <- c(round(seq(from = 5, to = CC/100, length = 100)),
+                                round(seq(from = CC/100, to = CC/10, length = 100)),
+                                round(seq(from = CC/10, to = CC/4, length = 100)),
+                                round(seq(from = CC/4, to = CC, length = 10)))
+  who <- replicate(replicates, 
+                   sample_from_population(population, 
+                                          CC))
+  
+  # terrible way of doing this
+  # maybe not so bad, since need nested
+  # definitely could be faster
+  # TODO fix up use of shannon
   for (i in pts) {
     subsample_diversity <- rep(NA, replicates)
     subsample_shannon <- rep(NA, replicates)
     for (j in 1:replicates) {
       subsample <- who[1:i, j]
-      subsample_diversity[j] <- length(unique(subsample))
+      subsample_diversity[j] <- sample_richness(subsample)
       community <- c(as.matrix(table(subsample)))
       proportions <- community/sum(community)
       subsample_shannon[j] <- breakaway::shannon(proportions)
     }
     rarefaction_table %<>% rbind(data.frame("reads" = i,
-                                            "richness" = min(subsample_diversity), "richness_max" = max(subsample_diversity),
-                                            "shannon" = min(subsample_shannon), "shannon_max" = max(subsample_shannon),
+                                            "richness" = min(subsample_diversity), 
+                                            "richness_max" = max(subsample_diversity),
+                                            "shannon" = min(subsample_shannon), 
+                                            "shannon_max" = max(subsample_shannon),
                                             "ecosystem" = ecosystem, "type" = "rcurve"))
   }
   rarefaction_table
 }
 
+#' Sample species from a population 
+#' 
+#' @param my_population_names The names of the species
+#' @param my_population_probabilities The relative abundances of the species
+#' @param sample_depth The number of individuals to observe (the read depth)
+#' 
+#' @return The species labels of the sampled species
 #' @export
-get_point <- function(ecosystem, read, label) {
-  read <- round(read)
-  my_population <- get(paste("population", ecosystem, sep=""))
-  ecosystem_name <- paste("ecosystem", ecosystem, sep="")
-  subsample <- sample(x = c(1:length(my_population$proportions)),
-                      size = read, prob = my_population$proportions, replace = T)
+sample_from_population <- function(my_population_probabilities, 
+                                   sample_depth, 
+                                   my_population_names = NA) {
+  
+  stopifnot(abs(sum(my_population_probabilities) - 1) < 1e-5)
+  
+  if (any(is.na(my_population_names))) {
+    my_population_names <- paste("species", 1:length(my_population_probabilities), sep = "")
+  }
+  
+  sample(x = my_population_names,
+         size = sample_depth, 
+         prob = my_population_probabilities, replace = T)
+}
+
+
+
+#' Points for plotting a rarefaction curved based on a sample
+#' 
+#' @param my_population The population distribution
+#' @param read Sample depth
+#' @param label label
+#' @param ecosystem_name ecosystem_name
+#' 
+#' @export
+get_point <- function(my_population, read, label, ecosystem_name) {
+  
+  read %<>% round
+  subsample <- sample_from_population(my_population, read)
   
   point <- data.frame("reads" = read,
-                      "richness" = length(unique(subsample)), "richness_max" = NA,
-                      "shannon" = breakaway::shannon(c(as.matrix(table(subsample)))/sum(c(as.matrix(table(subsample))))), "shannon_max" = NA,
-                      "ecosystem" = ecosystem_name, "type" = "observation")
-  subsample1 <- list()
-  subsample1$names <- subsample
-  subsample1$proportions <- c(as.matrix(table(subsample)))/sum(c(as.matrix(table(subsample))))
-  rarefied_sample <- draw_rarefaction(subsample1, replicates = 1, pts = seq(from = 1, to = read, length = 100),
+                      "richness" = sample_richness(subsample), 
+                      "richness_max" = NA,
+                      "shannon" = breakaway::shannon(c(as.matrix(table(subsample)))/sum(c(as.matrix(table(subsample))))), 
+                      "shannon_max" = NA,
+                      "ecosystem" = ecosystem_name, 
+                      "type" = "observation")
+  
+  subsample1 <- subsample %>% table %>% to_proportions(type = "column")
+  ### draw_rarefaction props, not labels
+  rarefied_sample <- draw_rarefaction(subsample1, 
+                                      replicates = 1, 
+                                      pts = seq(from = 1, to = read, length = 5),
                                       ecosystem = ecosystem_name)
   rarefied_sample$type <- paste("rarefied_sample", label, sep="")
   xx <- subsample %>% table %>% make_frequency_count_table
@@ -82,9 +164,12 @@ get_point <- function(ecosystem, read, label) {
   richness_estimate <- c(estimate - 2*error, estimate + 2*error)
   
   estimate <- data.frame("reads" = read,
-                         "richness" = richness_estimate[1], "richness_max" = richness_estimate[2],
-                         "shannon" = 0, "shannon_max" = 100000,
-                         "ecosystem" = ecosystem_name, "type" = paste("estimate", label, sep=""))
+                         "richness" = richness_estimate[1], 
+                         "richness_max" = richness_estimate[2],
+                         "shannon" = 0, 
+                         "shannon_max" = 100000,
+                         "ecosystem" = ecosystem_name, 
+                         "type" = paste("estimate", label, sep=""))
   rbind(point, rarefied_sample, estimate)
 }
 
@@ -96,26 +181,26 @@ make_table <- function(Ca, Cb, aa, ab, ba, bb, na1, na2, nb1, nb2) {
   
   # observations and truth
   truth <- rbind(data.frame("reads" = 0, 
-                            "richness" = length(population1$proportions), 
+                            "richness" = length(population1), 
                             "richness_max" = NA,
-                            "shannon" = breakaway::shannon(population1$proportions), 
+                            "shannon" = breakaway::shannon(population1), 
                             "shannon_max" = NA,
                             "ecosystem" =  "ecosystem1", 
                             "type" = "truth"),
                  data.frame("reads" = 0, 
-                            "richness" = length(population2$proportions), 
+                            "richness" = length(population2), 
                             "richness_max" = NA,
-                            "shannon" = breakaway::shannon(population2$proportions), 
+                            "shannon" = breakaway::shannon(population2), 
                             "shannon_max" = NA,
                             "ecosystem" =  "ecosystem2", 
                             "type" = "truth"))
   
   
   
-  observations <- rbind(get_point(1, na1, 1),
-                        get_point(1, na2, 2),
-                        get_point(2, nb1, 1),
-                        get_point(2, nb2, 2))
+  observations <- rbind(get_point(population1, na1, 1, "population1"),
+                        get_point(population1, na2, 2, "population1"),
+                        get_point(population2, nb1, 1, "population2"),
+                        get_point(population2, nb2, 2, "population2"))
   
   rarefaction_level <- observations %>% filter(type == "observation") %>% select(reads) %>% min
   
@@ -192,11 +277,11 @@ make_plot <- function(rarefaction_table_unequal,
                layout_matrix = matrix(c(1,1,2,3,4), nrow = 1))
 }
 
-#' Get error rates for different approaches
+#' Estimate the probability of making the correct decision for different approaches
 #' 
 #' Accepts a data structure and returns the estimated error rates for different approaches
 #' 
-#' @param repeats
+#' @param repeats Number of times to run the simulation
 #' 
 #' @import breakaway
 #' @export
@@ -210,7 +295,6 @@ get_error_rates <- function(repeats,
   populationB <- make_community(Cb, alpha_parameter = ba, beta_parameter = bb)
   
   results <- data.frame()
-  error <- matrix(NA, nrow = 1, ncol = 3)
   
   pvalues <- matrix(NA, nrow = 3, ncol = repeats)
   correct <- matrix(TRUE, nrow = 3, ncol = repeats)
@@ -225,14 +309,14 @@ get_error_rates <- function(repeats,
     samples <- list()
     for (k in 1:(2*rr)) {
       my_name <- get(paste("population", ifelse(k <= rr, "A", "B"), sep=""))
-      my_sample <- sample(1:length(my_name),
-                          size = read_counts[k], prob = my_name, replace = T)
+      my_sample <- sample_from_population(my_name, read_counts[k])
+      
       samples[[k]] <- my_sample
     }
     
     # estimate richness
     cs <- lapply(samples, sample_richness) %>% unlist
-    cs_rarefied <- lapply(samples, rarefied_richness, level = min(read_counts))  %>% unlist
+    cs_rarefied <- lapply(samples, rarefied_richness, level = min(read_counts)) %>% unlist
     cc2 <- lapply(samples, estimate_richness_breakaway) %>% data.frame
     covariate <- rep(c("A", "B"), each = rr)
     cs_summary <- lm(cs ~ covariate) %>% summary
@@ -251,21 +335,31 @@ get_error_rates <- function(repeats,
       correct[2, i] <- sign(cs_r_summary$coef[2,1]) == sign(Cb - Ca)
       
       ## TODO: is this right??
+      # bta$table[1,3] is the reduction in richness due to covariate B
+      # If Cb < Ca, should be negative
+      # i.e. if sign(Cb - Ca) is -1, so should sign(bta$table[1,3])
+      # Looks correct to me
       correct[3, i] <- sign(bta$table[1,3]) == sign(Cb - Ca)
     }
     
   }
   
+  ## Measuring error rate
+  ## If equal, H0 true; if p-value small, reject H0
   if(Ca == Cb) {
+    ## Correctly detect no difference
     threshold <- pvalues > 0.05
   } else {
+    ## Correctly detect difference
     threshold <- pvalues < 0.05
   }
   
+  # To be correct overall, need to make correct decision in correct direction
   overall_correct <- threshold & correct
-  error <- apply(overall_correct, 1, mean)
-  names(error) <- c("Raw", "Rarefied", "Corrected")
+  correct <- apply(overall_correct, 1, mean)
   
-  t(error)
+  names(correct) <- c("Raw", "Rarefied", "Corrected")
   
+  correct %<>% t %>% data.frame
+  correct
 }
