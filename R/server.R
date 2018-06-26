@@ -339,6 +339,7 @@ get_error_rates <- function(repeats,
       # If Cb < Ca, should be negative
       # i.e. if sign(Cb - Ca) is -1, so should sign(bta$table[1,3])
       # Looks correct to me
+      # TODO: actually should be [2,1]
       correct[3, i] <- sign(bta$table[1,3]) == sign(Cb - Ca)
     }
     
